@@ -4,8 +4,8 @@ from common.buffer import ReplayBuffer
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
-import gc
+import wandb
+
 SMAC_MAPS =  ["2c_vs_64zg", "2s_vs_1sc", "2s3z", "3s_vs_5z", "3s5z_vs3s6z",
 				 "3s5z", "10m_vs_11m", "27m_vs_30m", "bane_vs_bane", "corridor", 
 				 "mmm", "mmm2"]
@@ -26,6 +26,11 @@ class Runner:
 
 			self.args = args
 
+			wandb.init(
+            project="smac_rl_comms",
+            config=vars(args) if hasattr(args, '__dict__') else args,
+            name=f"{args.alg}_{args.env}_run"
+			)
 			self.save_path = self.args.result_dir + '/' + args.alg
 			if not os.path.exists(self.save_path):
 				os.makedirs(self.save_path)
@@ -43,9 +48,13 @@ class Runner:
 			while time_steps < self.args.n_steps:
 				if time_steps // self.args.evaluate_cycle > evaluate_steps:
 					print('Run {}, train step {}/{}'.format(num, time_steps, self.args.n_steps))
-					win_rate, episode_reward = self.evaluate(epoch_num=time_steps)
-					episode_rewards.append(episode_reward)
+					win_rate, avg_episode_reward = self.evaluate(epoch_num=time_steps)
+					episode_rewards.append(avg_episode_reward)
 					win_rates.append(win_rate)
+					wandb.log({
+                    "eval/win_rate": win_rate,
+                    "eval/avg_episode_reward": avg_episode_reward
+                	}, step=time_steps)
 
 					# plt.cla()
 					# plt.subplot(2, 1, 1)
@@ -67,10 +76,13 @@ class Runner:
 				episodes = []
 
 				for episode_idx in range(self.args.n_episodes):
-					episode, _, _, info = self.rolloutWorker.generate_episode(episode_idx)  
+					episode, episode_reward, won, info = self.rolloutWorker.generate_episode(episode_idx)  
 					episodes.append(episode)
 					time_steps += info['steps_taken']
-
+					wandb.log({
+                    "train/episode_reward": episode_reward,
+                    "train/won": int(won)
+					}, step=time_steps)
 
 				episode_batch = episodes[0]
 				episodes.pop(0)
