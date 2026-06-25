@@ -21,65 +21,66 @@ class Agents:
 		
 
 	def choose_action(self, obs, last_action, agent_num, avail_actions, epsilon, maven_z=None, evaluate=False, msg_all=None):
-		
-		inputs = obs.copy()
-		avail_actions_ind = np.nonzero(avail_actions)[0]  # index of actions which can be choose
+		with torch.no_grad():
+			inputs = obs.copy()
+			avail_actions_ind = np.nonzero(avail_actions)[0]  # index of actions which can be choose
 
-		# transform agent_num to onehot vector
-		agent_id = np.zeros(self.n_agents)
-		agent_id[agent_num] = 1.
+			# transform agent_num to onehot vector
+			agent_id = np.zeros(self.n_agents)
+			agent_id[agent_num] = 1.
 
-		if self.args.last_action:
-		    inputs = np.hstack((inputs, last_action))  # concatenates arrays column wise (horizontally)
-		if self.args.reuse_network:
-		    inputs = np.hstack((inputs, agent_id))
-		hidden_state = self.policy.eval_hidden[:, agent_num, :]
+			if self.args.last_action:
+				inputs = np.hstack((inputs, last_action))  # concatenates arrays column wise (horizontally)
+			if self.args.reuse_network:
+				inputs = np.hstack((inputs, agent_id))
+			hidden_state = self.policy.eval_hidden[:, agent_num, :]
 
-		# transform the shape of inputs from (42,) to (1,42)
-		inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0)
-		avail_actions = torch.tensor(avail_actions, dtype=torch.float32).unsqueeze(0)
+			# transform the shape of inputs from (42,) to (1,42)
+			inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0)
+			avail_actions = torch.tensor(avail_actions, dtype=torch.float32).unsqueeze(0)
 
-		# cuda
-		if self.args.cuda:
-			inputs = inputs.cuda(device=self.args.cuda_device)
-			hidden_state = hidden_state.cuda(device=self.args.cuda_device)
+			# cuda
+			if self.args.cuda:
+				inputs = inputs.cuda(device=self.args.cuda_device)
+				hidden_state = hidden_state.cuda(device=self.args.cuda_device)
+				if self.args.with_comm:
+					msg_all = msg_all.cuda(device=self.args.cuda_device)
+				
+
 			if self.args.with_comm:
-				msg_all = msg_all.cuda(device=self.args.cuda_device)
-			
-
-		if self.args.with_comm:
-			# if comm
-			q_value, self.policy.eval_hidden[:, agent_num, :] = self.policy.eval_rnn(inputs, hidden_state, msg_all, agent_num)
-		else:
-			q_value, self.policy.eval_hidden[:, agent_num, :] = self.policy.eval_rnn(inputs, hidden_state)
-
-		# if the algo is coma, choose the actions from softmax
-		if self.args.alg == 'coma':
-			action = self._choose_action_from_softmax(q_value.cpu(), avail_actions, epsilon, evaluate)
-		else:
-			q_value[avail_actions == 0.0] = - float("inf")
-			# epsilon greedy
-			if np.random.uniform() < epsilon:
-				action = np.random.choice(avail_actions_ind)  # picks an action from the available actions array
+				# if comm
+				q_value, self.policy.eval_hidden[:, agent_num, :] = self.policy.eval_rnn(inputs, hidden_state, msg_all, agent_num)
 			else:
-				action = torch.argmax(q_value)
+				q_value, self.policy.eval_hidden[:, agent_num, :] = self.policy.eval_rnn(inputs, hidden_state)
+
+			# if the algo is coma, choose the actions from softmax
+			if self.args.alg == 'coma':
+				action = self._choose_action_from_softmax(q_value.cpu(), avail_actions, epsilon, evaluate)
+			else:
+				q_value[avail_actions == 0.0] = - float("inf")
+				# epsilon greedy
+				if np.random.uniform() < epsilon:
+					action = np.random.choice(avail_actions_ind)  # picks an action from the available actions array
+				else:
+					action = torch.argmax(q_value)
 
 		return action
 
 
 	# this is to be used during execution; given obs and last action (as per the normal inputs), should generate the messages for all agents
 	def get_all_messages(self, obs, last_action):
-		obs = torch.tensor(obs, dtype=torch.float32)
-		last_action = torch.tensor(last_action, dtype=torch.float32)
-		inputs = list()
-		inputs.append(obs)
+		with torch.no_grad():
+			obs = torch.tensor(obs, dtype=torch.float32)
+			last_action = torch.tensor(last_action, dtype=torch.float32)
+			inputs = list()
+			inputs.append(obs)
 
-		inputs = torch.cat([x for x in inputs], dim=1)
+			inputs = torch.cat([x for x in inputs], dim=1)
 
-		if self.args.cuda:
-			inputs = inputs.cuda(device=self.args.cuda_device)
+			if self.args.cuda:
+				inputs = inputs.cuda(device=self.args.cuda_device)
 
-		msgs_agents = self.policy.commtest(inputs)
+			msgs_agents = self.policy.commtest(inputs).detach()
 
 		return msgs_agents
 
@@ -89,11 +90,11 @@ class Agents:
 		episode_num = terminated.shape[0]  # number of episode batches inside this batch
 		max_episode_len = 0
 		for episode_idx in range(episode_num):
-		    for transition_idx in range(self.args.episode_limit):
-		        if terminated[episode_idx, transition_idx, 0] == 1:  # TODO: better understand this 3D shape; prob is [buffer_size, episode_limit, ?]; transition idx refers to the trajectory, i.e., passage from one state to another inside this episode
-		            if transition_idx + 1 >= max_episode_len:
-		                max_episode_len = transition_idx + 1
-		            break
+			for transition_idx in range(self.args.episode_limit):
+				if terminated[episode_idx, transition_idx, 0] == 1:  # TODO: better understand this 3D shape; prob is [buffer_size, episode_limit, ?]; transition idx refers to the trajectory, i.e., passage from one state to another inside this episode
+					if transition_idx + 1 >= max_episode_len:
+						max_episode_len = transition_idx + 1
+					break
 		return max_episode_len
 
 
@@ -101,12 +102,15 @@ class Agents:
 		# different episode has different length, so we need to get max length of the batch
 		max_episode_len = self._get_max_episode_len(batch)  # inside batch there are several episode batches; as they may have different sizes, gets the bigger
 		for key in batch.keys():
-		    batch[key] = batch[key][:, :max_episode_len]  # TODO: see this
-		self.policy.learn(batch, max_episode_len, train_step, epsilon)
+			batch[key] = batch[key][:, :max_episode_len]  # TODO: see this
+		if max_episode_len > 0:
+			self.policy.learn(batch, max_episode_len, train_step, epsilon)
+		else:
+			print('empty batch')
 
 		# savind model
 		if train_step > 0 and train_step % self.args.save_cycle == 0:
-		    self.policy.save_model(train_step)
+			self.policy.save_model(train_step)
 
 
 	def _choose_action_from_softmax(self, inputs, avail_actions, epsilon, evaluate=False):
@@ -135,11 +139,11 @@ class Agents:
 		episode_num = terminated.shape[0]  # number of episode batches inside this batch
 		max_episode_len = 0
 		for episode_idx in range(episode_num):
-		    for transition_idx in range(self.args.episode_limit):
-		        if terminated[episode_idx, transition_idx, 0] == 1:  # TODO: better understand this 3D shape; prob is [buffer_size, episode_limit, ?]; transition idx refers to the trajectory, i.e., passage from one state to another inside this episode
-		            if transition_idx + 1 >= max_episode_len:
-		                max_episode_len = transition_idx + 1
-		            break
+			for transition_idx in range(self.args.episode_limit):
+				if terminated[episode_idx, transition_idx, 0] == 1:  # TODO: better understand this 3D shape; prob is [buffer_size, episode_limit, ?]; transition idx refers to the trajectory, i.e., passage from one state to another inside this episode
+					if transition_idx + 1 >= max_episode_len:
+						max_episode_len = transition_idx + 1
+					break
 		return max_episode_len
 
 
@@ -148,11 +152,13 @@ class Agents:
 	# different episode has different length, so we need to get max length of the batch
 		max_episode_len = self._get_max_episode_len(batch)  # inside batch there are several episode batches; as they may have different sizes, gets the bigger
 		for key in batch.keys():
-		    batch[key] = batch[key][:, :max_episode_len]  # TODO: see this
-		self.policy.learn(batch, max_episode_len, train_step, epsilon)
-
+			batch[key] = batch[key][:, :max_episode_len]  # TODO: see this
+		if max_episode_len > 0:
+			self.policy.learn(batch, max_episode_len, train_step, epsilon)
+		else:
+			print('empty batch')
 		# savind model
 		if train_step > 0 and train_step % self.args.save_cycle == 0:
-		    self.policy.save_model(train_step)
+			self.policy.save_model(train_step)
 
 

@@ -40,18 +40,17 @@ class ReplayBuffer:
         with self.lock:
             idxs = self._get_storage_idx(inc=batch_size)  # get buffer index to store inside 
             # store the informations
-            self.buffers['obs'][idxs] = episode_batch['obs']
-            self.buffers['actions'][idxs] = episode_batch['actions']
-            self.buffers['state'][idxs] = episode_batch['state']
-            self.buffers['reward'][idxs] = episode_batch['reward']
-            self.buffers['obs_next'][idxs] = episode_batch['obs_next']
-            self.buffers['state_next'][idxs] = episode_batch['state_next']
-            self.buffers['avail_actions'][idxs] = episode_batch['avail_actions']
-            self.buffers['avail_actions_next'][idxs] = episode_batch['avail_actions_next']
-            self.buffers['actions_onehot'][idxs] = episode_batch['actions_onehot']
-            self.buffers['padded'][idxs] = episode_batch['padded']
-            self.buffers['terminated'][idxs] = episode_batch['terminated']
-
+            self.buffers['obs'][idxs] = episode_batch['obs'].astype(np.float32)
+            self.buffers['actions'][idxs] = episode_batch['actions'].astype(np.int64)
+            self.buffers['state'][idxs] = episode_batch['state'].astype(np.float32)
+            self.buffers['reward'][idxs] = episode_batch['reward'].astype(np.float32)
+            self.buffers['obs_next'][idxs] = episode_batch['obs_next'].astype(np.float32)
+            self.buffers['state_next'][idxs] = episode_batch['state_next'].astype(np.float32)
+            self.buffers['avail_actions'][idxs] = episode_batch['avail_actions'].astype(np.float32)
+            self.buffers['avail_actions_next'][idxs] = episode_batch['avail_actions_next'].astype(np.float32)
+            self.buffers['actions_onehot'][idxs] = episode_batch['actions_onehot'].astype(np.float32)
+            self.buffers['padded'][idxs] = episode_batch['padded'].astype(np.float32)
+            self.buffers['terminated'][idxs] = episode_batch['terminated'].astype(np.float32)
 
     def sample(self, batch_size):
         # samples from buffer ´batch_size´ episode batches

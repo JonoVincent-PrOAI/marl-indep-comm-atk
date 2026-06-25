@@ -38,7 +38,7 @@ class IDQL:
             self.commtest = Comm_net(input_comm_shape, args)
             self.target_commtest = Comm_net(input_comm_shape, args)
 
-
+        print(self.args.cuda)
         if self.args.cuda:
             self.eval_rnn.cuda(device=self.args.cuda_device)
             self.target_rnn.cuda(device=self.args.cuda_device)
@@ -54,7 +54,7 @@ class IDQL:
                 self.eval_rnn.load_state_dict(torch.load(path_rnn, map_location=map_location))
                 print('Successfully load the model: {}'.format(path_rnn))
             else:
-                raise Exception("No model!")
+                raise Exception("No model: " + self.model_dir)
 
 
         self.target_rnn.load_state_dict(self.eval_rnn.state_dict())

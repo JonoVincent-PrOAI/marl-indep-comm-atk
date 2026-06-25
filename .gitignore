@@ -1,0 +1,9 @@
+.CommsVenv
+smaclite/
+test.ipynb
+
+*/model
+*/result
+*/__pycache__
+*/*/__pycache__
+
