@@ -206,10 +206,9 @@ class RolloutWorker_SMAClite:
 			_, reward, terminated, truncated, info = self.env.step(actions)
 
 			if terminated or truncated:
-				terminated = True  # Force the loop to exit safely
-				break
+				terminated = True
+			
 			win_tag = True if terminated and 'battle_won' in info and info['battle_won'] else False
-
 
 			obs_ep.append(obs)
 			state_ep.append(state)
