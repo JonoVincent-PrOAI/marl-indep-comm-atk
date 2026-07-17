@@ -22,7 +22,7 @@ def common_args():
 	parser.add_argument('--optimizer', type=str, default="RMS", help='the optimizer')
 	parser.add_argument('--model_dir', type=str, default='./model', help='model directory of the policy')
 	parser.add_argument('--result_dir', type=str, default='./result', help='result directory of the policy')
-	parser.add_argument('--load_model', type=bool, default=False, help='whether to load the pretrained model')
+	parser.add_argument('--load_model', type=bool, default=None, help='Directory for pretrained model, does not loaded if None')
 	parser.add_argument('--learn', type=bool, default=True, help='whether to train the model')
 	parser.add_argument('--evaluate_cycle', type=int, default=10000, help='how often to eval the model')
 	parser.add_argument('--target_update_cycle', type=int, default=200, help='how often to update the target network')

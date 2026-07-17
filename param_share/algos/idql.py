@@ -47,12 +47,11 @@ class IDQL:
                 self.target_commtest.cuda(device=self.args.cuda_device)
 
         self.model_dir = args.model_dir + '/' + args.alg + '/' + args.map
-        if self.args.load_model:
-            if os.path.exists(self.model_dir + '/rnn_net_params.pkl'):
-                path_rnn = self.model_dir + '/rnn_net_params.pkl'
+        if self.args.load_model != None:
+            if os.path.exists(self.args.load_model):
                 map_location = 'cuda:0' if self.args.cuda else 'cpu'
-                self.eval_rnn.load_state_dict(torch.load(path_rnn, map_location=map_location))
-                print('Successfully load the model: {}'.format(path_rnn))
+                self.eval_rnn.load_state_dict(torch.load(self.args.load_model, map_location=map_location))
+                print('Successfully load the model: {}'.format(self.args.load_model))
             else:
                 raise Exception("No model: " + self.model_dir)
 
