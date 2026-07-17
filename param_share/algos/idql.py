@@ -6,6 +6,10 @@ import torch.nn as nn
 import numpy as np
 import sys
 
+if not "../" in sys.path:
+    sys.path.append('../')
+if not "./" in sys.path:
+    sys.path.append('./')
 
 class IDQL:
     def __init__(self, args):
