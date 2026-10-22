@@ -10,7 +10,7 @@ def common_args():
 	parser.add_argument('--replay_dir', type=str, default='', help='absolute path to save the replay')
 
 	# general args
-	parser.add_argument("--env", "-e", default="8m", help="set env name")
+	parser.add_argument("--env", "-e", default="10m_vs_11m", help="set env name")
 	parser.add_argument("--n_steps", "-ns", type=int, default=2000000, help="set total time steps to run")
 	parser.add_argument("--n_episodes", "-nep", type=int, default=1, help="set n_episodes")
 	parser.add_argument("--epsilon", "-eps", default=0.5, help="set epsilon value")
@@ -18,7 +18,7 @@ def common_args():
 	parser.add_argument('--reuse_network', type=bool, default=True, help='whether to use one network for all agents')
 	parser.add_argument('--gamma', type=float, default=0.99, help='the discount factor')
 	parser.add_argument('--evaluate_epoch', type=int, default=20, help='the number of the epoch to evaluate the agent')
-	parser.add_argument('--alg', type=str, default='vdn', help='the algorithm to train the agent')
+	parser.add_argument('--alg', type=str, default='idql', help='the algorithm to train the agent')
 	parser.add_argument('--optimizer', type=str, default="RMS", help='the optimizer')
 	parser.add_argument('--model_dir', type=str, default='./model', help='model directory of the policy')
 	parser.add_argument('--result_dir', type=str, default='./result', help='result directory of the policy')
@@ -29,12 +29,16 @@ def common_args():
 	parser.add_argument('--save_cycle', type=int, default=6650, help='how often to save the model')
 	parser.add_argument('--cuda', type=bool, default=False, help='whether to use the GPU')
 	# if doing communication
-	parser.add_argument('--with_comm', type=bool, default=False, help='whether to commtest')
+	parser.add_argument('--with_comm', type=bool, default=True, help='whether to commtest')
 	parser.add_argument('--msg_cut', type=bool, default=False, help='whether to cut msg')
 
 	# cuda device
 	parser.add_argument('--cuda_device', type=int, default=0, help='which cuda')
 	parser.add_argument('--rnn_hidden_dim', type=int, default=64, help='rnn dims')
+
+	#Attack args
+	parser.add_argument('--target_agent', type=int, default=None, help='UID of agent targetted by the attack')
+	parser.add_argument('--render_mode', type=str, default=None)
 
 
 	args = parser.parse_args()

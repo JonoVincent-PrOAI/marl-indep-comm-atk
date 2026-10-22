@@ -104,7 +104,7 @@ class Runner:
 						mini_batch = self.buffer.sample(min(self.buffer.current_size, self.args.batch_size))
 						terminated = mini_batch['terminated']
 						episode_num = terminated.shape[0]
-						if episode_num ==0:
+						if episode_num == 0:
 							print(self.buffer.buffers)
 						self.agents.train(mini_batch, train_steps)
 						train_steps += 1

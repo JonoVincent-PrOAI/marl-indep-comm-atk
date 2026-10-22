@@ -28,15 +28,12 @@ class Comm_net(nn.Module):
         # [b, e, n_a, o_dim] -> [b, e, n_a, m_dim]
         # note that the inputs come per transition
 
-        ep_num = inputs.shape[0] // self.args.n_agents
-
         # simple fc net
         x1 = F.relu(self.fc1(inputs))
         x2 = F.relu(self.fc2(x1))
         x3 = self.fc3(x2)
 
-        m = x3
-
+        m = torch.tanh(x3)
         final_msg = m.reshape(-1, self.args.n_agents, self.args.final_msg_dim) 
 
         return final_msg

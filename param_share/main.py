@@ -9,14 +9,20 @@ import numpy as np
 import torch
 import random
 import json
+import sys
+import os 
 
-#import warnings
-#warnings.filterwarnings("ignore", category=UserWarning) 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+import ma_gym
 
 N_EXPERIMENTS = 1
 SMAC_MAPS =  ["2c_vs_64zg", "2s_vs_1sc", "2s3z", "3s_vs_5z", "3s5z_vs3s6z",
 				 "3s5z", "10m_vs_11m", "27m_vs_30m", "bane_vs_bane", "corridor", 
-				 "mmm", "mmm2"]
+				 "MMM", "MMM2"]
 HEALING = ['MEDIVAC']
 
 if __name__ == '__main__':
@@ -91,14 +97,34 @@ if __name__ == '__main__':
 
 
 	elif args.env in ["PredatorPrey"]:
-		# to avoid registering a whole new environment just do it here for now
-		env = gym.make('PredatorPrey7x7-v0', grid_shape=(7, 7), n_agents=4, n_preys=2, penalty=-0.75)
-		args.n_actions = env.action_space[0].n
-		args.n_agents = env.n_agents
-		args.state_shape = 28 * args.n_agents 
-		args.obs_shape = 28
-		args.episode_limit = env._max_steps
-		print("Env PP with penalty ", env._penalty)
+			try:
+				gym.register(
+					id='PredatorPrey-v0',
+					entry_point='ma_gym.envs.predator_prey:PredatorPrey',
+					max_episode_steps=100,
+				)
+			except Exception:
+				pass
+			# Use .unwrapped to access custom attributes like _max_steps and _penalty
+			env = gym.make(
+				'ma_gym:PredatorPrey-v0', 
+				grid_shape=(51, 51), 
+				n_agents=4, 
+				n_preys=10, 
+				penalty=0.0,
+				step_cost= -0.05,
+				disable_env_checker=True,
+				render_mode = args.render_mode
+			).unwrapped			
+			args.n_actions = env.action_space[0].n
+			args.n_agents = env.n_agents
+			
+			# Safely compute observation and state shapes dynamically from the environment
+			args.obs_shape = env.observation_space[0].shape[0]
+			args.state_shape = args.obs_shape * args.n_agents  # or customize based on your runner's global state needs
+			
+			args.episode_limit = env._max_steps
+			print("Env PP with penalty ", env._penalty)
 	else:
 		raise Exception('Invalid environment: environment not supported!')
 		

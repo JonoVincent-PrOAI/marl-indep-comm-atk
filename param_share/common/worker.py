@@ -54,7 +54,15 @@ class RolloutWorker:
 				avail_action = [1] * self.n_actions  # avail actions for agent_i 
 
 				# for comm
-				action = self.agents.choose_action(obs[agent_id], last_action[agent_id], agent_id, avail_action, epsilon, evaluate, msg_all=all_msgs)
+				action = self.agents.choose_action(
+					obs=obs[agent_id], 
+					last_action=last_action[agent_id], 
+					agent_num=agent_id, 
+					avail_actions=avail_action, 
+					epsilon=epsilon, 
+					evaluate=evaluate, 
+					msg_all=all_msgs
+				)
 
 				# generate a vector of 0s and 1s of the corresponding action; actions chosen gets 1 and rest is 0
 				action_onehot = np.zeros(self.args.n_actions)
@@ -72,7 +80,7 @@ class RolloutWorker:
 			obs_ep.append(obs)
 			state_ep.append(state)
 
-			
+			1
 			actions_ep.append(np.reshape(actions, [self.n_agents, 1]))
 			actions_onehot_ep.append(actions_onehot)
 			avail_actions_ep.append(avail_actions)

@@ -17,18 +17,20 @@ class IDQL:
         self.n_agents = args.n_agents
         self.state_shape = args.state_shape
         self.obs_shape = args.obs_shape
+        
+        # Base input shape per agent
         input_shape = self.obs_shape
-
-        if args.with_comm:
-            input_comm_shape = self.obs_shape
 
         if args.last_action:
             input_shape += self.n_actions
         if args.reuse_network:
             input_shape += self.n_agents
 
+        # Comm_net input shape must match the combined base features per agent!
         if args.with_comm:
-            # TO RECEIVE ALL MSGS AS INPUT
+            input_comm_shape = input_shape
+            
+            # Message input size added to total RNN input shape:
             input_shape += (args.n_agents - 1) * args.final_msg_dim
             print("obs shape with comm: ", input_shape)
 
@@ -36,9 +38,7 @@ class IDQL:
         self.target_rnn = RNN(input_shape, args)
         self.args = args
 
-        # if doing communication
         if args.with_comm:
-            # NOTE NOW NOT USING THE AGENT ID
             self.commtest = Comm_net(input_comm_shape, args)
             self.target_commtest = Comm_net(input_comm_shape, args)
 
@@ -50,12 +50,12 @@ class IDQL:
                 self.commtest.cuda(device=self.args.cuda_device)
                 self.target_commtest.cuda(device=self.args.cuda_device)
 
-        self.model_dir = args.model_dir + '/' + args.alg + '/' + args.map
+        self.model_dir = args.model_dir
         if self.args.load_model != None:
-            if os.path.exists(self.args.load_model):
+            if os.path.exists(self.args.model_dir):
                 map_location = 'cuda:0' if self.args.cuda else 'cpu'
-                self.eval_rnn.load_state_dict(torch.load(self.args.load_model, map_location=map_location))
-                print('Successfully load the model: {}'.format(self.args.load_model))
+                self.eval_rnn.load_state_dict(torch.load(self.args.model_dir, map_location=map_location))
+                print('Successfully load the model: {}'.format(self.args.model_dir))
             else:
                 raise Exception("No model: " + self.model_dir)
 
@@ -119,41 +119,45 @@ class IDQL:
         return loss
 
     def _get_inputs(self, batch, transition_idx):
-        obs, obs_next, u_onehot = batch['obs'][:, transition_idx], \
-                                  batch['obs_next'][:, transition_idx], batch['actions_onehot'][:]
+        obs = batch['obs'][:, transition_idx]
+        obs_next = batch['obs_next'][:, transition_idx]
+        u_onehot = batch['actions_onehot']
         episode_num = obs.shape[0]
-        inputs, inputs_next = [], []
-        inputs.append(obs)
-        inputs_next.append(obs_next)
+
+        inputs, inputs_next = [obs], [obs_next]
+
+        # 1. Append last_action FIRST if configured
+        if self.args.last_action:
+            if transition_idx == 0:
+                last_act = torch.zeros_like(u_onehot[:, transition_idx])
+            else:
+                last_act = u_onehot[:, transition_idx - 1]
+            
+            inputs.append(last_act)
+            inputs_next.append(u_onehot[:, transition_idx])
+
+        # 2. Append agent ID one-hot if configured
+        if self.args.reuse_network:
+            agent_id_onehot = torch.eye(self.args.n_agents, device=obs.device).unsqueeze(0).expand(episode_num, -1, -1)
+            inputs.append(agent_id_onehot)
+            inputs_next.append(agent_id_onehot)
+
+        # 3. Concatenate base features per agent along dim=-1 (feature axis)
+        inputs_tensor = torch.cat(inputs, dim=-1)
+        inputs_next_tensor = torch.cat(inputs_next, dim=-1)
 
         all_msgs, all_msgs_next = None, None
 
+        # 4. Generate comm messages from the complete feature tensor
         if self.args.with_comm:
-            ### comm messages
-            inputs_msg = torch.cat([x for x in inputs], dim=-1)
-            inputs_msg_next = torch.cat([x for x in inputs_next], dim=-1)
             if self.args.cuda:
-                inputs_msg = inputs_msg.cuda(device=self.args.cuda_device)
-                inputs_msg_next = inputs_msg_next.cuda(device=self.args.cuda_device)
+                inputs_tensor = inputs_tensor.cuda(device=self.args.cuda_device)
+                inputs_next_tensor = inputs_next_tensor.cuda(device=self.args.cuda_device)
 
-            all_msgs = self.commtest(inputs_msg)
-            all_msgs_next = self.target_commtest(inputs_msg_next)
+            all_msgs = self.commtest(inputs_tensor)
+            all_msgs_next = self.target_commtest(inputs_next_tensor)
 
-
-        if self.args.last_action:
-            if transition_idx == 0: 
-                inputs.append(torch.zeros_like(u_onehot[:, transition_idx]))
-            else:
-                inputs.append(u_onehot[:, transition_idx - 1])
-            inputs_next.append(u_onehot[:, transition_idx])
-        if self.args.reuse_network:
-            inputs.append(torch.eye(self.args.n_agents).unsqueeze(0).expand(episode_num, -1, -1))
-            inputs_next.append(torch.eye(self.args.n_agents).unsqueeze(0).expand(episode_num, -1, -1))
-
-
-        inputs = torch.cat([x.reshape(episode_num * self.args.n_agents, -1) for x in inputs], dim=1)
-        inputs_next = torch.cat([x.reshape(episode_num * self.args.n_agents, -1) for x in inputs_next], dim=1)
-        return inputs, inputs_next, all_msgs, all_msgs_next
+        return inputs_tensor, inputs_next_tensor, all_msgs, all_msgs_next
 
     def get_q_values(self, batch, max_episode_len):
         episode_num = batch['obs'].shape[0]

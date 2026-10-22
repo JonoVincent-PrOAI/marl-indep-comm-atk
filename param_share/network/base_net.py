@@ -23,50 +23,63 @@ class RNN(nn.Module):
         self.msg_dim = args.final_msg_dim
 
     def forward(self, obs, hidden_state, msgs=None, agent_num=None):
-        # if communicating        
+       
         if self.args.with_comm:
+            device = "cuda" if self.args.cuda and torch.cuda.is_available() else "cpu"
 
-            ep_num = 1
-            if agent_num == None:
-                ep_num = obs.shape[0] // self.args.n_agents
-            
-            msgs_rec = msgs
-
-            # select the messages only from the other agetns, i.e., remove the ones of agent_num: [n_agents - 1, obs_dim]
-            if agent_num != None:
-                # if batch size = 1 (during execution)
-                # TO RECEIVE ALL MSGS
-                idxs = torch.tensor([i for i in range(self.args.n_agents) if i!=agent_num]).to("cuda" if self.args.cuda else "cpu")
-                #idxs = torch.tensor([i for i in range(self.args.n_agents)]).to("cuda" if self.args.cuda else "cpu")
-                msgs_rec = torch.index_select(msgs_rec, dim=1, index=idxs)
-                # [1, input_dim] -> [1, input_dim + msg_dim]
+            if agent_num is not None:
+                # Execution mode (single agent call during rollout)
+                # Filter out self-message (agent_num)
+                idxs = torch.tensor([i for i in range(self.args.n_agents) if i != agent_num], device=device)
+                msgs_rec = torch.index_select(msgs, dim=1, index=idxs)
+                
+                # Reshape & concatenate: [1, (n_agents-1) * msg_dim]
                 obs = torch.cat((obs, msgs_rec.reshape(obs.shape[0], -1)), dim=-1)
             else:
-                # during training everything comes together (bs >= 1), so need another way to cat the respective messages to the right indices
-                # i.e., all agents should only receive the messages from the others and not themselves (m_-i)
-                a_mask = torch.eye(self.args.n_agents).reshape(self.args.n_agents, self.args.n_agents, 1)
-                a_mask = torch.abs(a_mask - 1)
-                if self.args.cuda:
-                    a_mask = a_mask.cuda()
+                # Training mode (batch processing)
+                # Determine batch size dynamically regardless of whether obs is 2D or 3D
+                if obs.dim() == 3:
+                    ep_num = obs.shape[0]
+                    obs_flat = obs
+                else:
+                    ep_num = obs.shape[0] // self.args.n_agents
+                    obs_flat = obs.reshape(ep_num, self.args.n_agents, -1)
+
+                # msgs shape: [ep_num, n_agents, msg_dim]
+                msg_dim = msgs.shape[-1]
                 
-                # msg_rec: [bs, n_agents, msg_dim]
-                msgs_rec_rep = msgs_rec.repeat(1, self.args.n_agents, 1).reshape(ep_num, self.args.n_agents, self.args.n_agents, -1)
-                # NOTE CHANGED TO RECEIVE ALL MSGS
-                msgs_repective_idxs = msgs_rec_rep * a_mask #* a_mask
-                # [bs, n_a, (n_a - 1)*msg_dim] - m_-i: each agent receives the messages from the others
-                msgs_repective_idxs_no_0 = msgs_repective_idxs[msgs_repective_idxs.count_nonzero(dim=-1) != 0].reshape(ep_num, self.args.n_agents, -1)
-                msgs_rec = msgs_repective_idxs_no_0
+                # Build index matrix to select messages from all OTHER agents
+                # For agent i, gather indices [0, ..., i-1, i+1, ..., n_agents-1]
+                other_indices = []
+                for i in range(self.args.n_agents):
+                    other_indices.append([j for j in range(self.args.n_agents) if j != i])
+                
+                # Index tensor shape: [n_agents, n_agents - 1]
+                idx_tensor = torch.tensor(other_indices, device=device)
+                
+                # Expand index tensor across batch dimension -> [ep_num, n_agents, n_agents - 1]
+                idx_expanded = idx_tensor.unsqueeze(0).expand(ep_num, -1, -1)
+                
+                # Gather other agents' messages cleanly: [ep_num, n_agents, n_agents - 1, msg_dim]
+                # Expanding idx_expanded for gather on feature dimension
+                idx_gather = idx_expanded.unsqueeze(-1).expand(-1, -1, -1, msg_dim)
+                msgs_expanded = msgs.unsqueeze(1).expand(-1, self.args.n_agents, -1, -1)
+                
+                msgs_other = torch.gather(msgs_expanded, dim=2, index=idx_gather)
+                
+                # Flatten received messages per agent: [ep_num, n_agents, (n_agents - 1) * msg_dim]
+                msgs_rec = msgs_other.reshape(ep_num, self.args.n_agents, -1)
 
-                # cat messages to the inputs to the policy network
-                # obs here is in shape [bs * n_a, input_dim]; need to change to [bs, n_a, input_dim]
-                obs_aux = obs.reshape(ep_num, self.args.n_agents, -1)
-                # now concat with msgs_rec and change to previous shape: [bs, n_a, input_dim+msg_dim] -> [bs*n_a, input_dim+msg_dim]
-                obs = torch.cat((obs_aux, msgs_rec), dim=-1).reshape(ep_num * self.args.n_agents, -1)
+                # Concatenate features with received messages
+                obs = torch.cat((obs_flat, msgs_rec), dim=-1)
 
-
+        # Reshape features for linear FC layer
         x = F.relu(self.fc1(obs))
         h_in = hidden_state.reshape(-1, self.args.rnn_hidden_dim)
-        h = self.rnn(x, h_in)
+        
+        # Process through GRU/RNN
+        x_in = x.reshape(-1, x.shape[-1])
+        h = self.rnn(x_in, h_in)
         q = self.fc2(h)
 
         return q, h
